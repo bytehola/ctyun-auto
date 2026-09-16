@@ -13,17 +13,7 @@
 
 - 支持自动兑换奖励。
 - 每天可获取 `300` 积分。
-- 升级 `8c16g` 配置需要 `300` 积分。
-- 推荐策略：设置每月兑换一次（可使用 `-1` 表示每月最后一天），可长期维持 `8c16g` 配置（长期8c16g状态）。
-
-
-## 来源说明
-
-本项目中使用的保活程序来自 `CtYun` 项目：
-
-- https://github.com/leleji/CtYun
-
-当前仓库通过基础镜像 `su3817807/ctyun:latest` 使用该程序（容器内运行 `dotnet CtYun.dll`），本仓库主要补充了定时执行积分任务的能力和增加了24小时重启保活程序。
+- 推荐策略：设置每月兑换一次（可使用 `-1` 表示每月最后一天）
 
 ## 项目结构
 
@@ -74,5 +64,13 @@ docker start ctyun_sign_<APP_USER>
 # 自动兑换奖励配置
 docker exec -it ctyun_sign_<APP_USER> python3 /app/pc_login.py --config-redeem
 ```
+
+## 来源说明
+
+本项目中使用的保活程序来自 `CtYun` 项目：
+
+- https://github.com/leleji/CtYun
+
+当前仓库通过基础镜像 `su3817807/ctyun:latest` 使用该程序（容器内运行 `dotnet CtYun.dll`），本仓库主要补充了定时执行积分任务的能力和增加了24小时重启保活程序。
 
 验证码识别api方案来自 https://github.com/sml2h3/ddddocr
