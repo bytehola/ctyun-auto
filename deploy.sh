@@ -96,8 +96,56 @@ done
 mkdir -p "$DATA_DIR"
 
 # 3. 构建镜像并清理同名容器
-echo -e "${YELLOW}[*] 正在构建镜像...${NC}"
-docker build -q -t ctyun-auto-sign:v1 ./app > /dev/null
+# 实测延迟选 apt/pip 镜像通道：阿里云明显更快才用阿里云，否则用官方全球 CDN。
+# CN_MIRROR=1/0 可跳过探测强制指定；不影响 Docker Hub 基础镜像拉取。
+probe_url_time() {
+    local probe_url="$1"
+    local probe_time
+    if probe_time=$(curl -fsS -o /dev/null -w '%{time_total}' --max-time 8 --head "$probe_url" 2>/dev/null); then
+        echo "$probe_time"
+    else
+        echo 999
+    fi
+}
+
+probe_min_time() {
+    local probe_url="$1"
+    local first_time second_time
+    first_time=$(probe_url_time "$probe_url")
+    second_time=$(probe_url_time "$probe_url")
+    awk -v first="$first_time" -v second="$second_time" 'BEGIN{print (first+0 < second+0) ? first : second}'
+}
+
+if [ -n "${CN_MIRROR:-}" ]; then
+    USE_ALIYUN="$CN_MIRROR"
+    echo -e "${YELLOW}[*] 使用手动指定的镜像通道: CN_MIRROR=$USE_ALIYUN${NC}"
+elif ! command -v curl >/dev/null 2>&1; then
+    USE_ALIYUN=0
+    echo -e "${YELLOW}[*] 未找到 curl，无法探测延迟，默认使用官方镜像源${NC}"
+else
+    echo -e "${YELLOW}[*] 正在探测镜像源延迟，自动选择构建通道...${NC}"
+    OFFICIAL_TIME=$(probe_min_time "https://deb.debian.org/")
+    ALIYUN_TIME=$(probe_min_time "https://mirrors.aliyun.com/debian/")
+    echo -e "    官方源: ${OFFICIAL_TIME}s   阿里云: ${ALIYUN_TIME}s"
+    if awk -v aliyun="$ALIYUN_TIME" -v official="$OFFICIAL_TIME" 'BEGIN{exit !(aliyun+0.3 < official)}'; then
+        USE_ALIYUN=1
+    else
+        USE_ALIYUN=0
+    fi
+fi
+
+BUILD_ARGS=()
+if [ "$USE_ALIYUN" = "1" ]; then
+    echo -e "${YELLOW}[*] 本次构建使用阿里云镜像源加速 apt/pip${NC}"
+    BUILD_ARGS=(--build-arg APT_MIRROR=mirrors.aliyun.com --build-arg PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/)
+else
+    echo -e "${YELLOW}[*] 本次构建使用官方镜像源（全球 CDN）${NC}"
+fi
+
+echo -e "${YELLOW}[*] 正在构建镜像（首次需下载基础镜像和 Chromium，可能耗时数分钟，下方为实时进度）...${NC}"
+echo -e "${YELLOW}------------------------------------------------------${NC}"
+docker build --progress=plain "${BUILD_ARGS[@]}" -t ctyun-auto-sign:v1 ./app
+echo -e "${YELLOW}------------------------------------------------------${NC}"
 
 CONTAINER_NAME="ctyun_sign_${APP_USER}"
 if [ "$(docker ps -aq -f name=^${CONTAINER_NAME}$)" ]; then

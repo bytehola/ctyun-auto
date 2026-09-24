@@ -199,18 +199,30 @@ def execute_login_with_listener(
 
 def display_user_info(page: ChromiumPage) -> None:
     """
-    提取并输出当前登录的用户信息（手机号掩码）。
+    提取并输出当前登录的用户信息（手机号掩码），仅用于确认登录身份。
+    页面改版或异步渲染都可能导致取不到该元素，因此失败时只告警并截图留证，
+    不抛异常，避免中断后续的对话积分任务。
     """
     user_selector = "css:div.username span.txt"
 
-    if page.wait.ele_displayed(user_selector, timeout=5):
+    if not page.wait.ele_displayed(user_selector, timeout=10):
+        print("[!] 未定位到用户信息元素，跳过登录用户确认")
+        save_screenshot(page)
+        return
+
+    # 元素先渲染、文本由前端异步填充，轮询等待文本出现
+    username_text = ""
+    for _ in range(10):
         username_text = page.ele(user_selector).text
         if username_text:
-            print(f"[*] 登录成功，当前登录用户: {username_text}")
-        else:
-            raise RuntimeError("未能获取到当前用户信息，可能页面未完全渲染。")
+            break
+        time.sleep(1)
+
+    if username_text:
+        print(f"[*] 登录成功，当前登录用户: {username_text}")
     else:
-        raise RuntimeError("[-] 未能获取到当前用户信息，可能页面未完全渲染。")
+        print("[!] 用户信息文本为空，跳过登录用户确认")
+        save_screenshot(page)
 
 
 def chat_and_earn_points(page: ChromiumPage) -> None:
