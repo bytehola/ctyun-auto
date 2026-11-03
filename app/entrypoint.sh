@@ -3,6 +3,7 @@ set -e
 
 DEVICECODE_FILE="/app/data/.devicecode_${APP_USER}"
 RESTART_AT_FILE="/tmp/ctyun_restart_at"
+RESTART_FLAG_FILE="/tmp/ctyun_restart_triggered"
 
 if [ -z "$DEVICECODE" ]; then
     if [ -f "$DEVICECODE_FILE" ]; then
@@ -46,27 +47,34 @@ should_restart_ctyun_now() {
 
 run_ctyun_with_watch() {
     local duration="$1"
-    local scheduled_restart=0
 
-    timeout --foreground "$duration" dotnet CtYun.dll &
-    local timeout_pid=$!
+    rm -f "$RESTART_FLAG_FILE"
 
-    while kill -0 "$timeout_pid" 2>/dev/null; do
-        if should_restart_ctyun_now; then
-            echo "[*] 检测到兑换成功后的重启计划已到时，准备重启 CtYun.dll。"
-            scheduled_restart=1
-            rm -f "$RESTART_AT_FILE"
-            kill "$timeout_pid" 2>/dev/null || true
-            sleep 1
-            pkill -f "dotnet CtYun.dll" 2>/dev/null || true
-            break
-        fi
-        sleep 2
-    done
+    # 后台看门狗只负责监视重启计划。
+    # 注意：主程序必须留在前台运行，否则 bash 会把后台任务的 stdin 重定向到
+    # /dev/null，CtYun.dll 检测到输入不是终端后会直接放弃，无法输入短信验证码。
+    (
+        while true; do
+            if should_restart_ctyun_now; then
+                echo "[*] 检测到兑换成功后的重启计划已到时，准备重启 CtYun.dll。"
+                : > "$RESTART_FLAG_FILE"
+                rm -f "$RESTART_AT_FILE"
+                pkill -f "dotnet CtYun.dll" 2>/dev/null || true
+                break
+            fi
+            sleep 2
+        done
+    ) &
+    local watcher_pid=$!
 
-    wait "$timeout_pid"
+    timeout --foreground "$duration" dotnet CtYun.dll
     local exit_code=$?
-    if [ "$scheduled_restart" -eq 1 ]; then
+
+    kill "$watcher_pid" 2>/dev/null || true
+    wait "$watcher_pid" 2>/dev/null || true
+
+    if [ -f "$RESTART_FLAG_FILE" ]; then
+        rm -f "$RESTART_FLAG_FILE"
         return 200
     fi
     return "$exit_code"
